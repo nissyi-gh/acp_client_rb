@@ -88,7 +88,7 @@ DEPENDENCIES
   standard (~> 1.3)
 
 CHECKSUMS
-  acp_client_rb (0.1.0)
+  acp_client_rb (0.0.1)
   ast (2.4.3) sha256=954615157c1d6a382bc27d690d973195e79db7f55e9765ac7c481c60bdb4d383
   date (3.5.1) sha256=750d06384d7b9c15d562c76291407d89e368dda4d4fff957eb94962d325a0dc0
   erb (6.0.1) sha256=28ecdd99c5472aebd5674d6061e3c6b0a45c049578b071e5a52c2a7f13c197e5

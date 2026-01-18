@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
-require_relative "acp_client_rb/version"
+require_relative "acp_client/version"
 
-module AcpClientRb
+module AcpClient
   class Error < StandardError; end
   # Your code goes here...
 end
