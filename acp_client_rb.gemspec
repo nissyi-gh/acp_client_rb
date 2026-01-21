@@ -1,10 +1,10 @@
 # frozen_string_literal: true
 
-require_relative "lib/acp_client_rb/version"
+require_relative "lib/acp_client/version"
 
 Gem::Specification.new do |spec|
   spec.name = "acp_client_rb"
-  spec.version = AcpClientRb::VERSION
+  spec.version = AcpClient::VERSION
   spec.authors = ["nissyi"]
   spec.email = ["yuta.onishi.97@gmail.com"]
 
