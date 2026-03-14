@@ -12,6 +12,11 @@ module AcpClient
       @fs_write_text_file = fs_write_text_file
     end
 
+    def list_session_capability?
+      caps = agent_capabilities
+      caps["list"] == true || caps.dig("sessionCapabilities", "list") == true
+    end
+
     def interactive_session!
       connect
       run_interactive_loop
@@ -19,12 +24,16 @@ module AcpClient
       shutdown
     end
 
-    def connect
+    def connect(load_session_id: nil, create_session: true, cwd: Dir.pwd, mcp_servers: [])
       @process_manager.start
 
       @response_handler = ResponseHandler.new(
         process_manager: @process_manager,
-        json_rpc: @json_rpc
+        json_rpc: @json_rpc,
+        load_session_id: load_session_id,
+        create_session: create_session,
+        cwd: cwd,
+        mcp_servers: mcp_servers
       )
 
       @response_handler.on_fs_read_text_file(&@fs_read_text_file) if @fs_read_text_file
@@ -41,6 +50,46 @@ module AcpClient
       @process_manager.send_message(message)
 
       @response_handler.wait_for_ready
+    end
+
+    def list_sessions(cwd: nil, cursor: nil)
+      raise SessionError, "Not connected" unless @response_handler
+      unless list_session_capability?
+        raise SessionError, "Agent does not support session/list (sessionCapabilities.list)"
+      end
+
+      request_id = @json_rpc.next_id
+      @response_handler.register_pending_request(request_id)
+
+      message = @json_rpc.session_list_message(request_id: request_id, cwd: cwd, cursor: cursor)
+      @process_manager.send_message(message)
+
+      result = @response_handler.wait_for_pending_response(request_id)
+      {
+        sessions: result["sessions"] || [],
+        next_cursor: result["nextCursor"]
+      }
+    end
+
+    def load_session(session_id, cwd: Dir.pwd, mcp_servers: [])
+      raise SessionError, "Not connected" unless @response_handler
+      caps = agent_capabilities
+      unless caps["loadSession"] == true || caps.dig("sessionCapabilities", "loadSession") == true
+        raise SessionError, "Agent does not support session/load (loadSession)"
+      end
+
+      request_id = @json_rpc.next_id
+      @response_handler.register_session_load(request_id, session_id)
+
+      message = @json_rpc.session_load_message(
+        request_id: request_id,
+        session_id: session_id,
+        cwd: cwd,
+        mcp_servers: mcp_servers
+      )
+      @process_manager.send_message(message)
+
+      @response_handler.wait_for_session
     end
 
     def send_prompt(text)

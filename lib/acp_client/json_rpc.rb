@@ -75,6 +75,31 @@ module AcpClient
       }
     end
 
+    def session_load_message(request_id:, session_id:, cwd: Dir.pwd, mcp_servers: [])
+      {
+        jsonrpc: JSON_RPC_VERSION,
+        id: request_id,
+        method: "session/load",
+        params: {
+          sessionId: session_id,
+          cwd: cwd,
+          mcpServers: mcp_servers
+        }
+      }
+    end
+
+    def session_list_message(request_id:, cwd: nil, cursor: nil)
+      params = {}
+      params[:cwd] = cwd if cwd
+      params[:cursor] = cursor if cursor
+      {
+        jsonrpc: JSON_RPC_VERSION,
+        id: request_id,
+        method: "session/list",
+        params: params
+      }
+    end
+
     def generate(id:, method:, params:)
       {
         jsonrpc: JSON_RPC_VERSION,
