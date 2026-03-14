@@ -560,20 +560,19 @@ module AcpClient
         end
         return
       end
-      if @load_session_id && load_session_capability?(caps)
+      message = if @load_session_id && load_session_capability?(caps)
         req_id = @json_rpc.next_id
         @mutex.synchronize { @session_load_request_id = req_id }
-        message = @json_rpc.session_load_message(
+        @json_rpc.session_load_message(
           request_id: req_id,
           session_id: @load_session_id,
           cwd: @cwd,
           mcp_servers: @mcp_servers
         )
-        @process_manager.send_message(message)
       else
-        message = @json_rpc.session_new_message(cwd: @cwd, mcp_servers: @mcp_servers)
-        @process_manager.send_message(message)
+        @json_rpc.session_new_message(cwd: @cwd, mcp_servers: @mcp_servers)
       end
+      @process_manager.send_message(message)
     end
 
     def load_session_capability?(caps)
