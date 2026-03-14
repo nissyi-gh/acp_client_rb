@@ -4,10 +4,12 @@ module AcpClient
   class Client
     attr_reader :json_rpc, :process_manager, :response_handler
 
-    def initialize
+    def initialize(fs_read_text_file: nil, fs_write_text_file: nil)
       @json_rpc = JsonRpc.new
       @process_manager = ProcessManager.new
       @response_handler = nil
+      @fs_read_text_file = fs_read_text_file
+      @fs_write_text_file = fs_write_text_file
     end
 
     def interactive_session!
@@ -24,6 +26,9 @@ module AcpClient
         process_manager: @process_manager,
         json_rpc: @json_rpc
       )
+
+      @response_handler.on_fs_read_text_file(&@fs_read_text_file) if @fs_read_text_file
+      @response_handler.on_fs_write_text_file(&@fs_write_text_file) if @fs_write_text_file
 
       @response_handler.on_text_chunk do |text|
         print text
