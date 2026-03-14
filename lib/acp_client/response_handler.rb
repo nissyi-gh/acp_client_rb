@@ -6,9 +6,10 @@ module AcpClient
   class ResponseHandler
     attr_reader :session_id, :initialized, :agent_capabilities
 
-    def initialize(process_manager:, json_rpc:)
+    def initialize(process_manager:, json_rpc:, terminal_manager: nil)
       @process_manager = process_manager
       @json_rpc = json_rpc
+      @terminal_manager = terminal_manager || TerminalManager.new
 
       @mutex = Mutex.new
       @ready = ConditionVariable.new
@@ -133,6 +134,16 @@ module AcpClient
         handle_fs_read_text_file(id, params)
       when "fs/write_text_file"
         handle_fs_write_text_file(id, params)
+      when "terminal/create"
+        handle_terminal_create(id, params)
+      when "terminal/output"
+        handle_terminal_output(id, params)
+      when "terminal/wait_for_exit"
+        handle_terminal_wait_for_exit(id, params)
+      when "terminal/kill"
+        handle_terminal_kill(id, params)
+      when "terminal/release"
+        handle_terminal_release(id, params)
       else
         send_error_response(id, -32601, "Method not found: #{method_name}")
       end
@@ -183,6 +194,67 @@ module AcpClient
 
     def default_fs_write_text_file(path, content)
       File.write(path, content)
+    end
+
+    def handle_terminal_create(id, params)
+      session_id = params["sessionId"]
+      command = params["command"] || "sh"
+      args = params["args"] || []
+      env = params["env"] || []
+      cwd = params["cwd"]
+      output_byte_limit = params["outputByteLimit"] || 1_048_576
+
+      terminal_id = @terminal_manager.create(
+        session_id: session_id,
+        command: command,
+        args: args,
+        env: env,
+        cwd: cwd,
+        output_byte_limit: output_byte_limit
+      )
+      send_response(id, {terminalId: terminal_id})
+    rescue => e
+      send_error_response(id, -32603, "Internal error: #{e.message}")
+    end
+
+    def handle_terminal_output(id, params)
+      terminal_id = params["terminalId"]
+      result = @terminal_manager.output(terminal_id)
+      send_response(id, result)
+    rescue ProtocolError => e
+      send_error_response(id, -32000, e.message)
+    rescue => e
+      send_error_response(id, -32603, "Internal error: #{e.message}")
+    end
+
+    def handle_terminal_wait_for_exit(id, params)
+      terminal_id = params["terminalId"]
+      result = @terminal_manager.wait_for_exit(terminal_id)
+      send_response(id, result)
+    rescue ProtocolError => e
+      send_error_response(id, -32000, e.message)
+    rescue => e
+      send_error_response(id, -32603, "Internal error: #{e.message}")
+    end
+
+    def handle_terminal_kill(id, params)
+      terminal_id = params["terminalId"]
+      @terminal_manager.kill(terminal_id)
+      send_response(id, nil)
+    rescue ProtocolError => e
+      send_error_response(id, -32000, e.message)
+    rescue => e
+      send_error_response(id, -32603, "Internal error: #{e.message}")
+    end
+
+    def handle_terminal_release(id, params)
+      terminal_id = params["terminalId"]
+      @terminal_manager.release(terminal_id)
+      send_response(id, nil)
+    rescue ProtocolError => e
+      send_error_response(id, -32000, e.message)
+    rescue => e
+      send_error_response(id, -32603, "Internal error: #{e.message}")
     end
 
     def send_response(id, result)
