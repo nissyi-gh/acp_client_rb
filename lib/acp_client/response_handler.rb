@@ -29,10 +29,20 @@ module AcpClient
       @reader_thread = nil
       @stderr_thread = nil
       @on_text_chunk = nil
+      @on_fs_read_text_file = nil
+      @on_fs_write_text_file = nil
     end
 
     def on_text_chunk(&block)
       @on_text_chunk = block
+    end
+
+    def on_fs_read_text_file(&block)
+      @on_fs_read_text_file = block
+    end
+
+    def on_fs_write_text_file(&block)
+      @on_fs_write_text_file = block
     end
 
     def start_threads
@@ -106,9 +116,91 @@ module AcpClient
     def handle_message(msg)
       if msg["id"].nil? && msg["method"]
         handle_notification(msg)
+      elsif msg["method"] && msg.key?("id") && !msg.key?("result") && !msg.key?("error")
+        handle_incoming_request(msg)
       else
         handle_response(msg)
       end
+    end
+
+    def handle_incoming_request(msg)
+      id = msg["id"]
+      method_name = msg["method"]
+      params = msg["params"] || {}
+
+      case method_name
+      when "fs/read_text_file"
+        handle_fs_read_text_file(id, params)
+      when "fs/write_text_file"
+        handle_fs_write_text_file(id, params)
+      else
+        send_error_response(id, -32601, "Method not found: #{method_name}")
+      end
+    end
+
+    def handle_fs_read_text_file(id, params)
+      path = params["path"]
+      line = params["line"]
+      limit = params["limit"]
+
+      content = if @on_fs_read_text_file
+        @on_fs_read_text_file.call(path, line, limit)
+      else
+        default_fs_read_text_file(path, line, limit)
+      end
+
+      send_response(id, {content: content})
+    rescue Errno::ENOENT => e
+      send_error_response(id, -32000, "File not found: #{e.message}")
+    rescue => e
+      send_error_response(id, -32603, "Internal error: #{e.message}")
+    end
+
+    def handle_fs_write_text_file(id, params)
+      path = params["path"]
+      content = params["content"] || ""
+
+      if @on_fs_write_text_file
+        @on_fs_write_text_file.call(path, content)
+      else
+        default_fs_write_text_file(path, content)
+      end
+
+      send_response(id, nil)
+    rescue => e
+      send_error_response(id, -32603, "Internal error: #{e.message}")
+    end
+
+    def default_fs_read_text_file(path, line, limit)
+      full_content = File.read(path)
+      return full_content if line.nil? && limit.nil?
+
+      lines = full_content.lines
+      start_idx = line ? [(line - 1), 0].max : 0
+      count = limit ? [limit, lines.size - start_idx].min : (lines.size - start_idx)
+      lines[start_idx, count]&.join || ""
+    end
+
+    def default_fs_write_text_file(path, content)
+      File.write(path, content)
+    end
+
+    def send_response(id, result)
+      response = {
+        jsonrpc: "2.0",
+        id: id,
+        result: result
+      }
+      @process_manager.send_message(response)
+    end
+
+    def send_error_response(id, code, message)
+      response = {
+        jsonrpc: "2.0",
+        id: id,
+        error: {code: code, message: message}
+      }
+      @process_manager.send_message(response)
     end
 
     def handle_notification(msg)

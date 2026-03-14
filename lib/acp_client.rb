@@ -9,7 +9,7 @@ require_relative "acp_client/response_handler"
 require_relative "acp_client/client"
 
 module AcpClient
-  def self.new
-    Client.new
+  def self.new(**kwargs)
+    Client.new(**kwargs)
   end
 end
