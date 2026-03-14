@@ -40,12 +40,28 @@ module AcpClient
     def shutdown
       return unless @running
 
-      @stdin&.close rescue nil
-      @stdout&.close rescue nil
-      @stderr&.close rescue nil
+      begin
+        @stdin&.close
+      rescue
+        nil
+      end
+      begin
+        @stdout&.close
+      rescue
+        nil
+      end
+      begin
+        @stderr&.close
+      rescue
+        nil
+      end
 
       if @wait_thr&.alive?
-        Process.kill("TERM", @wait_thr.pid) rescue nil
+        begin
+          Process.kill("TERM", @wait_thr.pid)
+        rescue
+          nil
+        end
       end
 
       @running = false

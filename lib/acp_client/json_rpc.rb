@@ -27,7 +27,7 @@ module AcpClient
         params: {
           protocolVersion: 1,
           clientCapabilities: {
-            fs: { readTextFile: true, writeTextFile: true },
+            fs: {readTextFile: true, writeTextFile: true},
             terminal: true
           },
           clientInfo: {
@@ -59,7 +59,7 @@ module AcpClient
         params: {
           sessionId: session_id,
           prompt: [
-            { type: "text", text: prompt_text }
+            {type: "text", text: prompt_text}
           ]
         }
       }
