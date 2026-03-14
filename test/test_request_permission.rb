@@ -76,7 +76,7 @@ class TestRequestPermission < Minitest::Test
 
   def test_cancel_pending_permission
     @handler.on_permission_request do |_session_id, _tool_call, _options, cancelled|
-      sleep 0.01 while !cancelled.call
+      sleep 0.01 until cancelled.call
       {outcome: "cancelled"}
     end
     @handler.start_threads
