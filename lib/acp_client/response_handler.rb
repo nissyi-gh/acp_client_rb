@@ -32,6 +32,12 @@ module AcpClient
       @on_text_chunk = nil
       @on_fs_read_text_file = nil
       @on_fs_write_text_file = nil
+      @on_plan = nil
+      @on_tool_call = nil
+      @on_tool_call_update = nil
+      @on_session_info_update = nil
+      @on_current_mode_update = nil
+      @on_user_message_chunk = nil
     end
 
     def on_text_chunk(&block)
@@ -44,6 +50,30 @@ module AcpClient
 
     def on_fs_write_text_file(&block)
       @on_fs_write_text_file = block
+    end
+
+    def on_plan(&block)
+      @on_plan = block
+    end
+
+    def on_tool_call(&block)
+      @on_tool_call = block
+    end
+
+    def on_tool_call_update(&block)
+      @on_tool_call_update = block
+    end
+
+    def on_session_info_update(&block)
+      @on_session_info_update = block
+    end
+
+    def on_current_mode_update(&block)
+      @on_current_mode_update = block
+    end
+
+    def on_user_message_chunk(&block)
+      @on_user_message_chunk = block
     end
 
     def start_threads
@@ -297,7 +327,57 @@ module AcpClient
         end
       when "agent_message_chunk"
         handle_agent_message_chunk(sid, upd)
+      when "plan"
+        handle_plan(sid, upd)
+      when "tool_call"
+        handle_tool_call(sid, upd)
+      when "tool_call_update"
+        handle_tool_call_update(sid, upd)
+      when "session_info_update"
+        handle_session_info_update(sid, upd)
+      when "current_mode_update"
+        handle_current_mode_update(sid, upd)
+      when "user_message_chunk"
+        handle_user_message_chunk(sid, upd)
       end
+    end
+
+    def handle_plan(sid, upd)
+      entries = upd["entries"] || []
+      @on_plan&.call(sid, entries)
+    end
+
+    def handle_tool_call(sid, upd)
+      tool_call_id = upd["toolCallId"]
+      title = upd["title"]
+      kind = upd["kind"]
+      status = upd["status"]
+      content = upd["content"]
+      @on_tool_call&.call(sid, tool_call_id: tool_call_id, title: title, kind: kind, status: status, content: content)
+    end
+
+    def handle_tool_call_update(sid, upd)
+      tool_call_id = upd["toolCallId"]
+      status = upd["status"]
+      content = upd["content"]
+      @on_tool_call_update&.call(sid, tool_call_id: tool_call_id, status: status, content: content)
+    end
+
+    def handle_session_info_update(sid, upd)
+      title = upd["title"]
+      updated_at = upd["updatedAt"]
+      meta = upd["_meta"]
+      @on_session_info_update&.call(sid, title: title, updated_at: updated_at, meta: meta)
+    end
+
+    def handle_current_mode_update(sid, upd)
+      mode = upd["mode"]
+      @on_current_mode_update&.call(sid, mode)
+    end
+
+    def handle_user_message_chunk(sid, upd)
+      content = upd["content"] || {}
+      @on_user_message_chunk&.call(sid, content)
     end
 
     def handle_agent_message_chunk(sid, upd)
