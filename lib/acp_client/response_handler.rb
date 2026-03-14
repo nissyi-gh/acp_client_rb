@@ -4,7 +4,7 @@ require "json"
 
 module AcpClient
   class ResponseHandler
-    attr_reader :session_id, :initialized
+    attr_reader :session_id, :initialized, :agent_capabilities
 
     def initialize(process_manager:, json_rpc:)
       @process_manager = process_manager
@@ -16,12 +16,15 @@ module AcpClient
 
       @session_id = nil
       @initialized = false
+      @agent_capabilities = {}
+      @fatal_error = nil
 
       @buffers = Hash.new { |h, sid| h[sid] = MessageBuffer.new }
       @available_commands_by_session = {}
 
       @prompt_session_by_request_id = {}
       @active_turn_request_id = nil
+      @error_by_request_id = {}
 
       @reader_thread = nil
       @stderr_thread = nil
@@ -44,13 +47,17 @@ module AcpClient
 
     def wait_for_ready
       @mutex.synchronize do
-        @ready.wait(@mutex) until @initialized
+        @ready.wait(@mutex) until @initialized || @fatal_error
+        raise @fatal_error if @fatal_error
       end
     end
 
     def wait_for_turn_completion(request_id)
       @mutex.synchronize do
         @turn_done.wait(@mutex) while @active_turn_request_id == request_id
+        if (err = @error_by_request_id.delete(request_id))
+          raise err
+        end
       end
     end
 
@@ -135,7 +142,7 @@ module AcpClient
       id = msg["id"]
 
       if id == JsonRpc::INITIALIZE_ID && msg["result"]
-        handle_initialize_response
+        handle_initialize_response(msg["result"])
         return
       end
 
@@ -154,7 +161,10 @@ module AcpClient
       end
     end
 
-    def handle_initialize_response
+    def handle_initialize_response(result = nil)
+      @mutex.synchronize do
+        @agent_capabilities = (result || {}).fetch("agentCapabilities", {})
+      end
       message = @json_rpc.session_new_message
       @process_manager.send_message(message)
     end
@@ -192,12 +202,21 @@ module AcpClient
     end
 
     def handle_error_response(id, error)
-      puts "\n[error] id=#{id} #{error}"
+      code = error["code"]
+      message = error["message"] || error.to_s
+      data = error["data"]
+      protocol_error = ProtocolError.new(message, code: code, data: data)
 
       @mutex.synchronize do
-        if @active_turn_request_id == id
-          @active_turn_request_id = nil
-          @turn_done.broadcast
+        if id == JsonRpc::INITIALIZE_ID || id == JsonRpc::SESSION_NEW_ID
+          @fatal_error = protocol_error
+          @ready.broadcast
+        else
+          @error_by_request_id[id] = protocol_error
+          if @active_turn_request_id == id
+            @active_turn_request_id = nil
+            @turn_done.broadcast
+          end
         end
       end
     end

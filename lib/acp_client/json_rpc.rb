@@ -65,6 +65,16 @@ module AcpClient
       }
     end
 
+    def session_cancel_message(session_id:)
+      {
+        jsonrpc: JSON_RPC_VERSION,
+        method: "session/cancel",
+        params: {
+          sessionId: session_id
+        }
+      }
+    end
+
     def generate(id:, method:, params:)
       {
         jsonrpc: JSON_RPC_VERSION,

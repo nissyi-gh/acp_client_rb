@@ -55,6 +55,18 @@ module AcpClient
       @response_handler.wait_for_turn_completion(request_id)
     end
 
+    def cancel_prompt
+      session_id = @response_handler.current_session_id
+      raise SessionError, "Session not ready" unless session_id
+
+      message = @json_rpc.session_cancel_message(session_id: session_id)
+      @process_manager.send_message(message)
+    end
+
+    def agent_capabilities
+      @response_handler&.agent_capabilities || {}
+    end
+
     def shutdown
       @response_handler&.stop_threads
       @process_manager&.shutdown
