@@ -80,12 +80,28 @@ module AcpClient
         t = @terminals.delete(terminal_id)
         return unless t
 
-        t[:stdin]&.close rescue nil
-        t[:stdout]&.close rescue nil
-        t[:stderr]&.close rescue nil
+        begin
+          t[:stdin]&.close
+        rescue
+          nil
+        end
+        begin
+          t[:stdout]&.close
+        rescue
+          nil
+        end
+        begin
+          t[:stderr]&.close
+        rescue
+          nil
+        end
 
         if t[:wait_thr]&.alive?
-          Process.kill("TERM", t[:wait_thr].pid) rescue nil
+          begin
+            Process.kill("TERM", t[:wait_thr].pid)
+          rescue
+            nil
+          end
         end
       end
     end
@@ -116,8 +132,20 @@ module AcpClient
         end
 
         threads = [
-          Thread.new { stdout.each_line { |line| append_output.call(line) } rescue IOError },
-          Thread.new { stderr.each_line { |line| append_output.call("[stderr] #{line}") } rescue IOError }
+          Thread.new {
+            begin
+              stdout.each_line { |line| append_output.call(line) }
+            rescue
+              IOError
+            end
+          },
+          Thread.new {
+            begin
+              stderr.each_line { |line| append_output.call("[stderr] #{line}") }
+            rescue
+              IOError
+            end
+          }
         ]
         threads.each(&:join)
 

@@ -52,8 +52,16 @@ module AcpClient
     end
 
     def stop_threads
-      @reader_thread&.kill rescue nil
-      @stderr_thread&.kill rescue nil
+      begin
+        @reader_thread&.kill
+      rescue
+        nil
+      end
+      begin
+        @stderr_thread&.kill
+      rescue
+        nil
+      end
     end
 
     def wait_for_ready
