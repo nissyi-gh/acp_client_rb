@@ -1,0 +1,61 @@
+# frozen_string_literal: true
+
+require "test_helper"
+
+class TestJsonRpc < Minitest::Test
+  def setup
+    @rpc = AcpClient::JsonRpc.new
+  end
+
+  def test_initialize_message
+    msg = @rpc.initialize_message
+
+    assert_equal "2.0", msg[:jsonrpc]
+    assert_equal 0, msg[:id]
+    assert_equal "initialize", msg[:method]
+    assert_equal 1, msg[:params][:protocolVersion]
+    assert_equal true, msg[:params][:clientCapabilities][:fs][:readTextFile]
+    assert_equal true, msg[:params][:clientCapabilities][:fs][:writeTextFile]
+    assert_equal true, msg[:params][:clientCapabilities][:terminal]
+    assert_equal "ruby-acp-client", msg[:params][:clientInfo][:name]
+  end
+
+  def test_session_new_message
+    msg = @rpc.session_new_message(cwd: "/tmp", mcp_servers: [])
+
+    assert_equal "2.0", msg[:jsonrpc]
+    assert_equal 1, msg[:id]
+    assert_equal "session/new", msg[:method]
+    assert_equal "/tmp", msg[:params][:cwd]
+    assert_equal [], msg[:params][:mcpServers]
+  end
+
+  def test_session_prompt_message
+    msg = @rpc.session_prompt_message(
+      request_id: 42,
+      session_id: "sess_abc",
+      prompt_text: "Hello"
+    )
+
+    assert_equal "2.0", msg[:jsonrpc]
+    assert_equal 42, msg[:id]
+    assert_equal "session/prompt", msg[:method]
+    assert_equal "sess_abc", msg[:params][:sessionId]
+    assert_equal [{type: "text", text: "Hello"}], msg[:params][:prompt]
+  end
+
+  def test_session_cancel_message
+    msg = @rpc.session_cancel_message(session_id: "sess_xyz")
+
+    assert_equal "2.0", msg[:jsonrpc]
+    assert_nil msg[:id]
+    assert_equal "session/cancel", msg[:method]
+    assert_equal "sess_xyz", msg[:params][:sessionId]
+  end
+
+  def test_next_id_increments
+    assert_equal 2, @rpc.next_id
+    assert_equal 3, @rpc.next_id
+    assert_equal 4, @rpc.next_id
+  end
+end

@@ -9,5 +9,13 @@ module AcpClient
 
   class TimeoutError < Error; end
 
-  class ProtocolError < Error; end
+  class ProtocolError < Error
+    attr_reader :code, :data
+
+    def initialize(message = nil, code: nil, data: nil)
+      super(message)
+      @code = code
+      @data = data
+    end
+  end
 end

@@ -4,10 +4,12 @@ module AcpClient
   class Client
     attr_reader :json_rpc, :process_manager, :response_handler
 
-    def initialize
+    def initialize(fs_read_text_file: nil, fs_write_text_file: nil)
       @json_rpc = JsonRpc.new
       @process_manager = ProcessManager.new
       @response_handler = nil
+      @fs_read_text_file = fs_read_text_file
+      @fs_write_text_file = fs_write_text_file
     end
 
     def interactive_session!
@@ -24,6 +26,9 @@ module AcpClient
         process_manager: @process_manager,
         json_rpc: @json_rpc
       )
+
+      @response_handler.on_fs_read_text_file(&@fs_read_text_file) if @fs_read_text_file
+      @response_handler.on_fs_write_text_file(&@fs_write_text_file) if @fs_write_text_file
 
       @response_handler.on_text_chunk do |text|
         print text
@@ -53,6 +58,18 @@ module AcpClient
       @process_manager.send_message(message)
 
       @response_handler.wait_for_turn_completion(request_id)
+    end
+
+    def cancel_prompt
+      session_id = @response_handler.current_session_id
+      raise SessionError, "Session not ready" unless session_id
+
+      message = @json_rpc.session_cancel_message(session_id: session_id)
+      @process_manager.send_message(message)
+    end
+
+    def agent_capabilities
+      @response_handler&.agent_capabilities || {}
     end
 
     def shutdown
