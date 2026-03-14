@@ -64,6 +64,7 @@ module AcpClient
       session_id = @response_handler.current_session_id
       raise SessionError, "Session not ready" unless session_id
 
+      @response_handler.cancel_pending_permission
       message = @json_rpc.session_cancel_message(session_id: session_id)
       @process_manager.send_message(message)
     end
