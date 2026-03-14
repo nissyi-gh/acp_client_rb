@@ -38,6 +38,24 @@ module AcpClient
       @on_session_info_update = nil
       @on_current_mode_update = nil
       @on_user_message_chunk = nil
+      @on_permission_request = nil
+      @pending_permission = nil
+      @permission_cancelled = false
+    end
+
+    def on_permission_request(&block)
+      @on_permission_request = block
+    end
+
+    def cancel_pending_permission
+      @mutex.synchronize do
+        return unless @pending_permission && !@pending_permission[:responded]
+
+        @permission_cancelled = true
+        send_permission_response(@pending_permission[:id], {outcome: "cancelled"})
+        @pending_permission[:responded] = true
+        @pending_permission = nil
+      end
     end
 
     def on_text_chunk(&block)
@@ -182,6 +200,8 @@ module AcpClient
         handle_terminal_kill(id, params)
       when "terminal/release"
         handle_terminal_release(id, params)
+      when "session/request_permission"
+        handle_request_permission(id, params)
       else
         send_error_response(id, -32601, "Method not found: #{method_name}")
       end
@@ -309,6 +329,50 @@ module AcpClient
         jsonrpc: "2.0",
         id: id,
         error: {code: code, message: message}
+      }
+      @process_manager.send_message(response)
+    end
+
+    def handle_request_permission(id, params)
+      session_id = params["sessionId"]
+      tool_call = params["toolCall"] || {}
+      options = params["options"] || []
+
+      if @on_permission_request.nil?
+        allow_option = options.find { |o| (o["kind"] || o[:kind])&.to_s&.start_with?("allow") }
+        option_id = allow_option&.dig("optionId") || allow_option&.dig(:optionId) || options.first&.dig("optionId") || "allow-once"
+        send_permission_response(id, {outcome: "selected", optionId: option_id})
+        return
+      end
+
+      @mutex.synchronize do
+        @permission_cancelled = false
+        @pending_permission = {id: id, responded: false}
+      end
+
+      cancelled_proc = -> { @permission_cancelled }
+
+      outcome = @on_permission_request.call(session_id, tool_call, options, cancelled_proc)
+
+      @mutex.synchronize do
+        return if @pending_permission && @pending_permission[:responded]
+
+        send_permission_response(id, outcome)
+        @pending_permission[:responded] = true if @pending_permission
+        @pending_permission = nil
+      end
+    rescue => e
+      @mutex.synchronize do
+        @pending_permission = nil
+      end
+      send_error_response(id, -32603, "Internal error: #{e.message}")
+    end
+
+    def send_permission_response(id, outcome)
+      response = {
+        jsonrpc: "2.0",
+        id: id,
+        result: {outcome: outcome}
       }
       @process_manager.send_message(response)
     end
