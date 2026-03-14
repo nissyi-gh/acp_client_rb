@@ -6,19 +6,26 @@ module AcpClient
   class ResponseHandler
     attr_reader :session_id, :initialized, :agent_capabilities
 
-    def initialize(process_manager:, json_rpc:, terminal_manager: nil)
+    def initialize(process_manager:, json_rpc:, terminal_manager: nil, load_session_id: nil, create_session: true, cwd: Dir.pwd, mcp_servers: [])
       @process_manager = process_manager
       @json_rpc = json_rpc
       @terminal_manager = terminal_manager || TerminalManager.new
+      @load_session_id = load_session_id
+      @create_session = create_session
+      @cwd = cwd
+      @mcp_servers = mcp_servers
 
       @mutex = Mutex.new
       @ready = ConditionVariable.new
+      @session_ready_cv = ConditionVariable.new
       @turn_done = ConditionVariable.new
 
       @session_id = nil
       @initialized = false
+      @session_ready = false
       @agent_capabilities = {}
       @fatal_error = nil
+      @session_load_request_id = nil
 
       @buffers = Hash.new { |h, sid| h[sid] = MessageBuffer.new }
       @available_commands_by_session = {}
@@ -26,6 +33,7 @@ module AcpClient
       @prompt_session_by_request_id = {}
       @active_turn_request_id = nil
       @error_by_request_id = {}
+      @pending_requests = {}
 
       @reader_thread = nil
       @stderr_thread = nil
@@ -119,6 +127,13 @@ module AcpClient
       end
     end
 
+    def wait_for_session
+      @mutex.synchronize do
+        @session_ready_cv.wait(@mutex) until @session_ready || @fatal_error
+        raise @fatal_error if @fatal_error
+      end
+    end
+
     def wait_for_turn_completion(request_id)
       @mutex.synchronize do
         @turn_done.wait(@mutex) while @active_turn_request_id == request_id
@@ -138,6 +153,36 @@ module AcpClient
 
     def current_session_id
       @mutex.synchronize { @session_id }
+    end
+
+    def register_pending_request(request_id)
+      @mutex.synchronize do
+        @pending_requests[request_id] = {result: nil, error: nil, cond: ConditionVariable.new}
+      end
+    end
+
+    def wait_for_pending_response(request_id)
+      @mutex.synchronize do
+        pr = @pending_requests[request_id]
+        raise ArgumentError, "Request #{request_id} not registered" unless pr
+        pr[:cond].wait(@mutex) until pr[:result] || pr[:error]
+        result = pr[:result]
+        error = pr[:error]
+        @pending_requests.delete(request_id)
+        raise error if error
+        result
+      end
+    end
+
+    def session_load_request_id
+      @mutex.synchronize { @session_load_request_id }
+    end
+
+    def register_session_load(request_id, session_id)
+      @mutex.synchronize do
+        @session_load_request_id = request_id
+        @load_session_id = session_id
+      end
     end
 
     private
@@ -467,6 +512,24 @@ module AcpClient
         return
       end
 
+      if id && @mutex.synchronize { id == @session_load_request_id }
+        if msg["error"]
+          handle_error_response(id, msg["error"], fatal: true)
+        else
+          handle_session_load_response
+        end
+        return
+      end
+
+      if id && @mutex.synchronize { @pending_requests.key?(id) }
+        if msg["error"]
+          complete_pending_request(id, nil, protocol_error_from(msg["error"]))
+        else
+          complete_pending_request(id, msg["result"], nil)
+        end
+        return
+      end
+
       if msg["result"].is_a?(Hash) && msg["result"].key?("stopReason")
         handle_prompt_response(id, msg["result"])
         return
@@ -477,12 +540,44 @@ module AcpClient
       end
     end
 
+    def protocol_error_from(error)
+      code = error["code"]
+      message = error["message"] || error.to_s
+      data = error["data"]
+      ProtocolError.new(message, code: code, data: data)
+    end
+
     def handle_initialize_response(result = nil)
+      caps = nil
       @mutex.synchronize do
         @agent_capabilities = (result || {}).fetch("agentCapabilities", {})
+        caps = @agent_capabilities
       end
-      message = @json_rpc.session_new_message
-      @process_manager.send_message(message)
+      unless @create_session
+        @mutex.synchronize do
+          @initialized = true
+          @ready.broadcast
+        end
+        return
+      end
+      if @load_session_id && load_session_capability?(caps)
+        req_id = @json_rpc.next_id
+        @mutex.synchronize { @session_load_request_id = req_id }
+        message = @json_rpc.session_load_message(
+          request_id: req_id,
+          session_id: @load_session_id,
+          cwd: @cwd,
+          mcp_servers: @mcp_servers
+        )
+        @process_manager.send_message(message)
+      else
+        message = @json_rpc.session_new_message(cwd: @cwd, mcp_servers: @mcp_servers)
+        @process_manager.send_message(message)
+      end
+    end
+
+    def load_session_capability?(caps)
+      caps["loadSession"] == true || caps.dig("sessionCapabilities", "loadSession") == true
     end
 
     def handle_session_new_response(result)
@@ -492,11 +587,37 @@ module AcpClient
       @mutex.synchronize do
         @session_id = sid
         @initialized = true
+        @session_ready = true
         @ready.broadcast
+        @session_ready_cv.broadcast
       end
 
       puts "\n[info] session_id=#{sid}"
       puts "[info] You can now type messages. Type 'exit' to quit."
+    end
+
+    def handle_session_load_response
+      @mutex.synchronize do
+        @session_id = @load_session_id
+        @initialized = true
+        @session_ready = true
+        @ready.broadcast
+        @session_ready_cv.broadcast
+      end
+
+      puts "\n[info] session_id=#{@load_session_id} (loaded)"
+      puts "[info] You can now type messages. Type 'exit' to quit."
+    end
+
+    def complete_pending_request(id, result, error)
+      @mutex.synchronize do
+        pr = @pending_requests[id]
+        if pr
+          pr[:result] = result
+          pr[:error] = error
+          pr[:cond].broadcast
+        end
+      end
     end
 
     def handle_prompt_response(id, result)
@@ -517,14 +638,14 @@ module AcpClient
       $stdout.flush
     end
 
-    def handle_error_response(id, error)
+    def handle_error_response(id, error, fatal: false)
       code = error["code"]
       message = error["message"] || error.to_s
       data = error["data"]
       protocol_error = ProtocolError.new(message, code: code, data: data)
 
       @mutex.synchronize do
-        if id == JsonRpc::INITIALIZE_ID || id == JsonRpc::SESSION_NEW_ID
+        if fatal || id == JsonRpc::INITIALIZE_ID || id == JsonRpc::SESSION_NEW_ID
           @fatal_error = protocol_error
           @ready.broadcast
         else

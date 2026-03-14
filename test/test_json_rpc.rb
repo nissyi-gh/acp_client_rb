@@ -53,6 +53,34 @@ class TestJsonRpc < Minitest::Test
     assert_equal "sess_xyz", msg[:params][:sessionId]
   end
 
+  def test_session_load_message
+    msg = @rpc.session_load_message(request_id: 5, session_id: "sess_load1", cwd: "/home", mcp_servers: [])
+
+    assert_equal "2.0", msg[:jsonrpc]
+    assert_equal 5, msg[:id]
+    assert_equal "session/load", msg[:method]
+    assert_equal "sess_load1", msg[:params][:sessionId]
+    assert_equal "/home", msg[:params][:cwd]
+    assert_equal [], msg[:params][:mcpServers]
+  end
+
+  def test_session_list_message
+    msg = @rpc.session_list_message(request_id: 6, cwd: "/tmp", cursor: "next123")
+
+    assert_equal "2.0", msg[:jsonrpc]
+    assert_equal 6, msg[:id]
+    assert_equal "session/list", msg[:method]
+    assert_equal "/tmp", msg[:params][:cwd]
+    assert_equal "next123", msg[:params][:cursor]
+  end
+
+  def test_session_list_message_empty_params
+    msg = @rpc.session_list_message(request_id: 7)
+
+    assert_equal "session/list", msg[:method]
+    assert_equal({}, msg[:params])
+  end
+
   def test_next_id_increments
     assert_equal 2, @rpc.next_id
     assert_equal 3, @rpc.next_id
