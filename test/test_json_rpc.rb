@@ -34,7 +34,7 @@ class TestJsonRpc < Minitest::Test
     msg = @rpc.session_prompt_message(
       request_id: 42,
       session_id: "sess_abc",
-      prompt_text: "Hello"
+      prompt: [{type: "text", text: "Hello"}]
     )
 
     assert_equal "2.0", msg[:jsonrpc]
@@ -42,6 +42,22 @@ class TestJsonRpc < Minitest::Test
     assert_equal "session/prompt", msg[:method]
     assert_equal "sess_abc", msg[:params][:sessionId]
     assert_equal [{type: "text", text: "Hello"}], msg[:params][:prompt]
+  end
+
+  def test_session_prompt_message_extended_content
+    prompt = [
+      {type: "text", text: "Analyze this image"},
+      {type: "image", mimeType: "image/png", data: "iVBORw0KGgo="},
+      {type: "resource", resource: {uri: "file:///tmp/code.py", mimeType: "text/x-python", text: "print(1)"}}
+    ]
+    msg = @rpc.session_prompt_message(request_id: 43, session_id: "sess_xyz", prompt: prompt)
+
+    assert_equal "session/prompt", msg[:method]
+    assert_equal 3, msg[:params][:prompt].size
+    assert_equal "image", msg[:params][:prompt][1][:type]
+    assert_equal "image/png", msg[:params][:prompt][1][:mimeType]
+    assert_equal "resource", msg[:params][:prompt][2][:type]
+    assert_equal "file:///tmp/code.py", msg[:params][:prompt][2][:resource][:uri]
   end
 
   def test_session_cancel_message
