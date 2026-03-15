@@ -19,22 +19,30 @@ module AcpClient
       id
     end
 
-    def initialize_message
+    DEFAULT_CLIENT_CAPABILITIES = {
+      fs: {readTextFile: true, writeTextFile: true},
+      terminal: true
+    }.freeze
+
+    DEFAULT_CLIENT_INFO = {
+      name: "ruby-acp-client",
+      title: "Ruby ACP Client",
+      version: AcpClient::VERSION
+    }.freeze
+
+    # @param client_capabilities [Hash, nil] Override client capabilities (deep merged with defaults)
+    # @param client_info [Hash, nil] Override clientInfo (merged with defaults)
+    def initialize_message(client_capabilities: nil, client_info: nil)
+      caps = client_capabilities ? deep_merge(DEFAULT_CLIENT_CAPABILITIES, deep_normalize_keys(client_capabilities)) : DEFAULT_CLIENT_CAPABILITIES
+      info = client_info ? DEFAULT_CLIENT_INFO.merge(normalize_keys(client_info)) : DEFAULT_CLIENT_INFO
       {
         jsonrpc: JSON_RPC_VERSION,
         id: INITIALIZE_ID,
         method: "initialize",
         params: {
           protocolVersion: 1,
-          clientCapabilities: {
-            fs: {readTextFile: true, writeTextFile: true},
-            terminal: true
-          },
-          clientInfo: {
-            name: "ruby-acp-client",
-            title: "Ruby ACP Client",
-            version: AcpClient::VERSION
-          }
+          clientCapabilities: caps,
+          clientInfo: info
         }
       }
     end
@@ -106,6 +114,27 @@ module AcpClient
         method: method,
         params: params
       }
+    end
+
+    private
+
+    def normalize_keys(hash)
+      hash.transform_keys { |k| k.is_a?(Symbol) ? k : k.to_s.to_sym }
+    end
+
+    def deep_normalize_keys(obj)
+      case obj
+      when Hash
+        obj.transform_keys { |k| k.is_a?(Symbol) ? k : k.to_s.to_sym }.transform_values { |v| deep_normalize_keys(v) }
+      else
+        obj
+      end
+    end
+
+    def deep_merge(base, override)
+      base.merge(override) do |_key, old_val, new_val|
+        (old_val.is_a?(Hash) && new_val.is_a?(Hash)) ? deep_merge(old_val, new_val) : new_val
+      end
     end
   end
 end

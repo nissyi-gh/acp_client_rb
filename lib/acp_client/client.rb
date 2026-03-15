@@ -4,9 +4,19 @@ module AcpClient
   class Client
     attr_reader :json_rpc, :process_manager, :response_handler
 
-    def initialize(fs_read_text_file: nil, fs_write_text_file: nil, process_manager: nil)
+    def initialize(
+      fs_read_text_file: nil,
+      fs_write_text_file: nil,
+      process_manager: nil,
+      client_capabilities: nil,
+      client_info: nil,
+      agent_command: nil,
+      agent_env: nil
+    )
       @json_rpc = JsonRpc.new
-      @process_manager = process_manager || ProcessManager.new
+      @process_manager = process_manager || ProcessManager.new(command: agent_command, env: agent_env)
+      @client_capabilities = client_capabilities
+      @client_info = client_info
       @response_handler = nil
       @fs_read_text_file = fs_read_text_file
       @fs_write_text_file = fs_write_text_file
@@ -46,7 +56,10 @@ module AcpClient
 
       @response_handler.start_threads
 
-      message = @json_rpc.initialize_message
+      message = @json_rpc.initialize_message(
+        client_capabilities: @client_capabilities,
+        client_info: @client_info
+      )
       @process_manager.send_message(message)
 
       @response_handler.wait_for_ready

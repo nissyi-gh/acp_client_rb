@@ -9,7 +9,11 @@ module AcpClient
 
     attr_reader :stdin, :stdout, :stderr, :wait_thr
 
-    def initialize
+    # @param command [String, nil] Agent command (default: ACP_COMMAND)
+    # @param env [Hash, nil] Environment variables to merge with ENV (e.g. {"VAR" => "value"})
+    def initialize(command: nil, env: nil)
+      @command = command || ACP_COMMAND
+      @env = env
       @stdin = nil
       @stdout = nil
       @stderr = nil
@@ -20,7 +24,12 @@ module AcpClient
     def start
       raise ConnectionError, "Process already running" if @running
 
-      @stdin, @stdout, @stderr, @wait_thr = Open3.popen3(ACP_COMMAND)
+      if @env && !@env.empty?
+        merged_env = ENV.to_h.merge(@env.transform_keys(&:to_s))
+        @stdin, @stdout, @stderr, @wait_thr = Open3.popen3(merged_env, @command)
+      else
+        @stdin, @stdout, @stderr, @wait_thr = Open3.popen3(@command)
+      end
       @running = true
     end
 
