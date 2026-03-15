@@ -4,9 +4,9 @@ module AcpClient
   class Client
     attr_reader :json_rpc, :process_manager, :response_handler
 
-    def initialize(fs_read_text_file: nil, fs_write_text_file: nil)
+    def initialize(fs_read_text_file: nil, fs_write_text_file: nil, process_manager: nil)
       @json_rpc = JsonRpc.new
-      @process_manager = ProcessManager.new
+      @process_manager = process_manager || ProcessManager.new
       @response_handler = nil
       @fs_read_text_file = fs_read_text_file
       @fs_write_text_file = fs_write_text_file
@@ -92,9 +92,13 @@ module AcpClient
       @response_handler.wait_for_session
     end
 
-    def send_prompt(text)
+    # @param prompt [String, Array<Hash>] Text or ContentBlock array (text, image, audio, resource, resource_link)
+    def send_prompt(prompt)
       session_id = @response_handler.current_session_id
       raise SessionError, "Session not ready" unless session_id
+
+      content_blocks = normalize_prompt(prompt)
+      validate_prompt_capabilities!(content_blocks)
 
       request_id = @json_rpc.next_id
       @response_handler.register_prompt(request_id, session_id)
@@ -102,7 +106,7 @@ module AcpClient
       message = @json_rpc.session_prompt_message(
         request_id: request_id,
         session_id: session_id,
-        prompt_text: text
+        prompt: content_blocks
       )
       @process_manager.send_message(message)
 
@@ -127,7 +131,41 @@ module AcpClient
       @process_manager&.shutdown
     end
 
+    def prompt_capabilities
+      agent_capabilities.dig("promptCapabilities") || {}
+    end
+
     private
+
+    def normalize_prompt(prompt)
+      case prompt
+      when String
+        [{type: "text", text: prompt}]
+      when Array
+        prompt.map { |block| block.is_a?(Hash) ? block : {type: "text", text: block.to_s} }
+      else
+        [{type: "text", text: prompt.to_s}]
+      end
+    end
+
+    def validate_prompt_capabilities!(content_blocks)
+      caps = prompt_capabilities
+      return if caps.empty?
+
+      content_blocks.each do |block|
+        type = block[:type] || block["type"]
+        case type.to_s
+        when "text", "resource_link"
+          # baseline, always supported
+        when "image"
+          raise SessionError, "Agent does not support image in prompt (promptCapabilities.image)" unless caps["image"]
+        when "audio"
+          raise SessionError, "Agent does not support audio in prompt (promptCapabilities.audio)" unless caps["audio"]
+        when "resource"
+          raise SessionError, "Agent does not support embedded resource in prompt (promptCapabilities.embeddedContext)" unless caps["embeddedContext"]
+        end
+      end
+    end
 
     def run_interactive_loop
       loop do

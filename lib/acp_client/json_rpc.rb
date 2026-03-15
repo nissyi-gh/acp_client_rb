@@ -51,16 +51,15 @@ module AcpClient
       }
     end
 
-    def session_prompt_message(request_id:, session_id:, prompt_text:)
+    # @param prompt [Array<Hash>] ContentBlock array (e.g. [{type: "text", text: "..."}], [{type: "image", mimeType: "image/png", data: "..."}])
+    def session_prompt_message(request_id:, session_id:, prompt:)
       {
         jsonrpc: JSON_RPC_VERSION,
         id: request_id,
         method: "session/prompt",
         params: {
           sessionId: session_id,
-          prompt: [
-            {type: "text", text: prompt_text}
-          ]
+          prompt: prompt
         }
       }
     end
