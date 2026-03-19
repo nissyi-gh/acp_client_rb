@@ -20,6 +20,24 @@ class TestJsonRpc < Minitest::Test
     assert_equal "ruby-acp-client", msg[:params][:clientInfo][:name]
   end
 
+  def test_initialize_message_custom_client_capabilities
+    msg = @rpc.initialize_message(
+      client_capabilities: {fs: {readTextFile: false}, terminal: false}
+    )
+    assert_equal false, msg[:params][:clientCapabilities][:fs][:readTextFile]
+    assert_equal true, msg[:params][:clientCapabilities][:fs][:writeTextFile]
+    assert_equal false, msg[:params][:clientCapabilities][:terminal]
+  end
+
+  def test_initialize_message_custom_client_info
+    msg = @rpc.initialize_message(
+      client_info: {name: "my-app", title: "My App", version: "2.0.0"}
+    )
+    assert_equal "my-app", msg[:params][:clientInfo][:name]
+    assert_equal "My App", msg[:params][:clientInfo][:title]
+    assert_equal "2.0.0", msg[:params][:clientInfo][:version]
+  end
+
   def test_session_new_message
     msg = @rpc.session_new_message(cwd: "/tmp", mcp_servers: [])
 
